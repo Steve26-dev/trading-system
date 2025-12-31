@@ -4,8 +4,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, BarChart, Bar
 } from 'recharts';
 import { SUPPORTED_COINS, DEFAULT_K, DEFAULT_FEE } from '../constants';
-import { fetchOHLCV, fetchTickers } from '../services/upbitService';
-import { runBacktest } from '../services/backtestEngine';
+import { fetchBacktest } from '../services/backendService';
 import { analyzeStrategyPerformance } from '../services/geminiService';
 import { BacktestResult, MarketTicker } from '../types';
 
@@ -19,21 +18,25 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [aiReport, setAiReport] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
-    const data = await fetchOHLCV(symbol, days + 5);
-    const backtestRes = runBacktest(data, { symbol, k, fee: DEFAULT_FEE, days, useMaFilter });
-    setResults(backtestRes);
-
-    const tickers = await fetchTickers([symbol]);
-    if (tickers.length > 0) {
-      const prevDay = data[data.length - 1];
-      const range = prevDay.high - prevDay.low;
-      const target = tickers[0].openingPrice + (range * k);
-      setTicker({ ...tickers[0], targetPrice: target });
+    setError(null);
+    try {
+      const data = await fetchBacktest({ symbol, k, fee: DEFAULT_FEE, days, useMaFilter });
+      setResults(data.results);
+      setTicker(data.ticker);
+      setLastUpdated(new Date().toLocaleTimeString());
+    } catch (error) {
+      console.error("Backtest fetch failed", error);
+      setResults([]);
+      setTicker(null);
+      setError("백엔드 응답에 실패했습니다. 잠시 후 다시 시도하세요.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -120,6 +123,12 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Primary KPI Grid */}
+      {error ? (
+        <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl p-4 text-xs font-bold flex items-center gap-2">
+          <i className="fa-solid fa-triangle-exclamation"></i>
+          {error}
+        </div>
+      ) : null}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
         <div className="bg-white p-6 rounded-2xl premium-card flex flex-col justify-between">
           <div className="flex justify-between items-start">
@@ -127,7 +136,7 @@ const Dashboard: React.FC = () => {
             <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center"><i className="fa-solid fa-coins"></i></div>
           </div>
           <div className="mt-4">
-            <p className="text-2xl font-black mono text-slate-900 leading-none">₩{ticker?.currentPrice.toLocaleString() || '---'}</p>
+            <p className="text-2xl font-black mono text-slate-900 leading-none">₩{ticker ? ticker.currentPrice.toLocaleString() : '---'}</p>
             <div className={`mt-2 inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full ${ticker && ticker.changeRate >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
               <i className={`fa-solid fa-caret-${ticker && ticker.changeRate >= 0 ? 'up' : 'down'}`}></i>
               {ticker ? (ticker.changeRate * 100).toFixed(2) : '0.00'}%
@@ -168,7 +177,9 @@ const Dashboard: React.FC = () => {
           </div>
           <div className="mt-4">
             <p className="text-3xl font-black mono leading-none">+{stats.ror}%</p>
-            <p className="mt-2 text-[10px] font-bold text-indigo-100">Across {results.length} Sessions</p>
+            <p className="mt-2 text-[10px] font-bold text-indigo-100">
+              Across {results.length} Sessions {lastUpdated ? `• ${lastUpdated}` : ''}
+            </p>
           </div>
         </div>
 
@@ -256,6 +267,24 @@ const Dashboard: React.FC = () => {
 
         {/* Right Sidebar Area */}
         <div className="lg:col-span-4 space-y-8">
+          {/* System Status */}
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 neo-shadow">
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">System Status</h3>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-black text-slate-900">Backtest API</p>
+                <p className="text-[10px] text-slate-400 font-bold">/api/backtest</p>
+              </div>
+              <span className={`px-2 py-1 rounded-full text-[10px] font-black ${error ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                {error ? 'DEGRADED' : 'OK'}
+              </span>
+            </div>
+            <div className="mt-4 text-[10px] text-slate-400 font-bold flex items-center justify-between">
+              <span>Last Update</span>
+              <span className="mono text-slate-600">{lastUpdated || '--:--:--'}</span>
+            </div>
+          </div>
+
           {/* AI Terminal Card */}
           <div className="bg-[#111827] rounded-3xl p-6 shadow-2xl relative overflow-hidden group min-h-[400px] flex flex-col">
             <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl group-hover:bg-indigo-500/20 transition-all"></div>

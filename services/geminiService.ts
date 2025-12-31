@@ -2,10 +2,18 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { BacktestResult } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+function getClient() {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) return null;
+  return new GoogleGenAI({ apiKey });
+}
 
 export async function analyzeStrategyPerformance(results: BacktestResult[], k: number) {
   if (results.length === 0) return "분석할 데이터가 충분하지 않습니다.";
+  const ai = getClient();
+  if (!ai) {
+    return "Gemini API 키가 설정되지 않았습니다. `.env.local`에 `GEMINI_API_KEY`를 넣어주세요.";
+  }
 
   const finalReturn = results[results.length - 1].hpr;
   const tradeDays = results.filter(r => r.isBought);

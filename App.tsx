@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import BacktestGuide from './components/BacktestGuide';
 import Dashboard from './components/Dashboard';
 
 const App: React.FC = () => {
@@ -11,6 +12,7 @@ const App: React.FC = () => {
     { id: 'portfolio', label: 'Portfolio', icon: 'fa-wallet' },
     { id: 'settings', label: 'Settings', icon: 'fa-sliders' },
   ];
+  const activeItem = navItems.find((item) => item.id === activeTab) || navItems[0];
 
   return (
     <div className="flex min-h-screen bg-[#F8FAFC]">
@@ -67,7 +69,7 @@ const App: React.FC = () => {
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Overview</span>
             <i className="fa-solid fa-chevron-right text-[10px] text-slate-300"></i>
-            <span className="text-xs font-bold text-slate-900 uppercase tracking-widest">Trading Dashboard</span>
+            <span className="text-xs font-bold text-slate-900 uppercase tracking-widest">{activeItem.label}</span>
           </div>
 
           <div className="flex items-center gap-4">
@@ -88,7 +90,7 @@ const App: React.FC = () => {
         </header>
 
         <main className="flex-1 overflow-x-hidden">
-          <Dashboard />
+          {activeTab === 'backtest' ? <BacktestGuide /> : <Dashboard />}
         </main>
       </div>
     </div>

@@ -1,89 +1,96 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import Dashboard from './components/Dashboard';
 
 const App: React.FC = () => {
+  const [activeTab, setActiveTab] = useState('dashboard');
+
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: 'fa-chart-pie' },
+    { id: 'backtest', label: 'Backtesting', icon: 'fa-flask' },
+    { id: 'portfolio', label: 'Portfolio', icon: 'fa-wallet' },
+    { id: 'settings', label: 'Settings', icon: 'fa-sliders' },
+  ];
+
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Navbar */}
-      <nav className="sticky top-0 z-50 glass border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+    <div className="flex min-h-screen bg-[#F8FAFC]">
+      {/* Sidebar Navigation */}
+      <aside className="w-64 bg-white border-r border-slate-200 hidden lg:flex flex-col fixed inset-y-0 z-50">
+        <div className="p-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
-              <i className="fa-solid fa-chart-line text-xl"></i>
+              <i className="fa-solid fa-bolt-lightning text-xl"></i>
             </div>
             <div>
-              <h1 className="text-lg font-black tracking-tight text-slate-900">QuantDash</h1>
-              <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest leading-none">Larry Williams Breakout</p>
+              <h1 className="text-lg font-extrabold tracking-tight text-slate-900 leading-none">QuantDash</h1>
+              <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">Alpha v2.5</span>
             </div>
           </div>
-          
-          <div className="hidden md:flex items-center gap-6">
-            <a href="#" className="text-sm font-bold text-slate-600 hover:text-indigo-600">Dashboard</a>
-            <a href="#" className="text-sm font-bold text-slate-400 hover:text-indigo-600">Optimization</a>
-            <a href="#" className="text-sm font-bold text-slate-400 hover:text-indigo-600">Reports</a>
-            <div className="h-6 w-px bg-slate-200 mx-2"></div>
-            <button className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md hover:bg-slate-800 transition-all">
-              <i className="fa-brands fa-google"></i> Login
+        </div>
+
+        <nav className="flex-1 px-4 space-y-1">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+                activeTab === item.id
+                  ? 'bg-indigo-50 text-indigo-600 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <i className={`fa-solid ${item.icon} w-5`}></i>
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="p-4 border-t border-slate-100">
+          <div className="bg-slate-900 rounded-2xl p-4 text-white relative overflow-hidden">
+            <div className="absolute -top-4 -right-4 w-20 h-20 bg-indigo-500/20 rounded-full blur-2xl"></div>
+            <h4 className="text-xs font-bold mb-1">PRO Access</h4>
+            <p className="text-[10px] text-slate-400 mb-3">Unlock all strategy parameters.</p>
+            <button className="w-full py-2 bg-indigo-500 hover:bg-indigo-400 text-white text-[10px] font-black rounded-lg transition-colors">
+              Upgrade Now
             </button>
           </div>
+          <p className="mt-4 text-[10px] text-slate-400 font-bold text-center uppercase tracking-widest">
+            &copy; 2024 QuantDash
+          </p>
         </div>
-      </nav>
+      </aside>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto w-full flex-1">
-        <Dashboard />
-      </main>
+      {/* Main Content Area */}
+      <div className="flex-1 lg:pl-64 flex flex-col">
+        {/* Top Bar */}
+        <header className="h-16 bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-40 px-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Overview</span>
+            <i className="fa-solid fa-chevron-right text-[10px] text-slate-300"></i>
+            <span className="text-xs font-bold text-slate-900 uppercase tracking-widest">Trading Dashboard</span>
+          </div>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white py-12">
-        <div className="max-w-7xl mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-12">
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 opacity-50 grayscale">
-              <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white">
-                <i className="fa-solid fa-chart-line"></i>
+          <div className="flex items-center gap-4">
+            <button className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-indigo-100 hover:text-indigo-600 transition-colors">
+              <i className="fa-solid fa-bell text-xs"></i>
+            </button>
+            <div className="h-6 w-px bg-slate-200"></div>
+            <div className="flex items-center gap-3 pl-2">
+              <div className="text-right hidden sm:block">
+                <p className="text-xs font-black text-slate-900 leading-none">Medical Student</p>
+                <p className="text-[10px] text-slate-400 font-bold">Trading Mode</p>
               </div>
-              <span className="font-black">QuantDash</span>
-            </div>
-            <p className="text-sm text-slate-500 leading-relaxed max-w-xs">
-              의대 학업과 병행 가능한 검증된 통계적 전략(Rule-based)을 자동으로 24시간 돌리는 가장 똑똑한 방법.
-            </p>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-8">
-            <div>
-              <h4 className="font-bold text-slate-900 mb-4">Resources</h4>
-              <ul className="text-sm text-slate-500 space-y-2">
-                <li><a href="#" className="hover:text-indigo-600">Backtesting Guide</a></li>
-                <li><a href="#" className="hover:text-indigo-600">K-Value Optimization</a></li>
-                <li><a href="#" className="hover:text-indigo-600">API Documentation</a></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-bold text-slate-900 mb-4">Support</h4>
-              <ul className="text-sm text-slate-500 space-y-2">
-                <li><a href="#" className="hover:text-indigo-600">Help Center</a></li>
-                <li><a href="#" className="hover:text-indigo-600">Discord Community</a></li>
-                <li><a href="#" className="hover:text-indigo-600">Telegram Bot</a></li>
-              </ul>
+              <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-black shadow-md">
+                MS
+              </div>
             </div>
           </div>
+        </header>
 
-          <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
-            <h4 className="font-bold text-slate-900 mb-2">Notice</h4>
-            <p className="text-xs text-slate-500 leading-normal">
-              이 대시보드는 투자 권유를 목적으로 하지 않으며, 모든 투자의 책임은 투자자 본인에게 있습니다. 과거의 수익률이 미래를 보장하지 않습니다.
-            </p>
-          </div>
-        </div>
-        <div className="max-w-7xl mx-auto px-4 mt-12 pt-8 border-t border-slate-100 flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-          <span>&copy; 2024 QuantDash Engineering. All rights reserved.</span>
-          <div className="flex gap-4">
-            <a href="#">Privacy</a>
-            <a href="#">Terms</a>
-          </div>
-        </div>
-      </footer>
+        <main className="flex-1 overflow-x-hidden">
+          <Dashboard />
+        </main>
+      </div>
     </div>
   );
 };

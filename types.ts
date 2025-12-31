@@ -12,6 +12,7 @@ export interface BacktestResult {
   date: string;
   price: number;
   target: number;
+  ma5: number;
   isBought: boolean;
   ror: number;
   hpr: number;
@@ -22,14 +23,7 @@ export interface StrategyParams {
   k: number;
   fee: number;
   days: number;
-}
-
-export interface UserProfile {
-  uid: string;
-  email: string | null;
-  displayName: string | null;
-  preferredCoins: string[];
-  kValue: number;
+  useMaFilter: boolean;
 }
 
 export interface MarketTicker {
@@ -39,5 +33,6 @@ export interface MarketTicker {
   highPrice: number;
   lowPrice: number;
   targetPrice: number;
+  ma5: number;
   changeRate: number;
 }

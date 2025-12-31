@@ -1,0 +1,5 @@
+{
+  "name": "QuantDash: Volatility Breakout",
+  "description": "A production-grade algorithmic trading dashboard focused on the Larry Williams Volatility Breakout strategy for crypto markets, featuring backtesting, AI optimization, and live monitoring.",
+  "requestFramePermissions": []
+}

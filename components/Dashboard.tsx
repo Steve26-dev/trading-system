@@ -1,71 +1,126 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, BarChart, Bar
 } from 'recharts';
 import { SUPPORTED_COINS, DEFAULT_K, DEFAULT_FEE } from '../constants';
 import { fetchBacktest } from '../services/backendService';
 import { analyzeStrategyPerformance } from '../services/geminiService';
-import { BacktestResult, MarketTicker } from '../types';
+import { AiReport, MarketTicker } from '../types';
 
 const Dashboard: React.FC = () => {
   const [symbol, setSymbol] = useState(SUPPORTED_COINS[0].symbol);
   const [k, setK] = useState(DEFAULT_K);
   const [days, setDays] = useState(100);
   const [useMaFilter, setUseMaFilter] = useState(true);
-  const [results, setResults] = useState<BacktestResult[]>([]);
   const [ticker, setTicker] = useState<MarketTicker | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [aiReport, setAiReport] = useState<string | null>(null);
+  const [aiReport, setAiReport] = useState<AiReport | null>(null);
+  const [aiCached, setAiCached] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const { data, isFetching, isError, refetch, dataUpdatedAt } = useQuery({
+    queryKey: ['backtest', symbol, k, days, useMaFilter],
+    queryFn: () => fetchBacktest({ symbol, k, fee: DEFAULT_FEE, days, useMaFilter }),
+    staleTime: 30000,
+    retry: 2,
+    placeholderData: (previous) => previous,
+  });
 
-  const fetchData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchBacktest({ symbol, k, fee: DEFAULT_FEE, days, useMaFilter });
-      setResults(data.results);
+  const results = data?.results ?? [];
+  const tradeSummary = data?.tradeSummary ?? null;
+  const metrics = data?.metrics ?? null;
+  const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : null;
+  const errorMessage = isError ? "백엔드 응답에 실패했습니다. 잠시 후 다시 시도하세요." : null;
+
+  const winRateValue = metrics ? metrics.winRate : 0;
+  const totalReturnValue = metrics ? metrics.totalReturn : 0;
+  const mddValue = metrics ? metrics.mdd : 0;
+
+  useEffect(() => {
+    if (data?.ticker) {
       setTicker(data.ticker);
-      setLastUpdated(new Date().toLocaleTimeString());
-    } catch (error) {
-      console.error("Backtest fetch failed", error);
-      setResults([]);
-      setTicker(null);
-      setError("백엔드 응답에 실패했습니다. 잠시 후 다시 시도하세요.");
-    } finally {
-      setLoading(false);
     }
+  }, [data?.ticker, dataUpdatedAt]);
+
+  useEffect(() => {
+    setAiReport(null);
+    setAiCached(false);
+  }, [symbol, k, days, useMaFilter]);
+
+  const buildWsUrl = (path: string) => {
+    const baseUrl = import.meta.env.VITE_API_BASE_URL;
+    if (baseUrl) {
+      const wsBase = baseUrl.replace(/^http/, 'ws');
+      return `${wsBase}${path}`;
+    }
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${protocol}://${window.location.host}${path}`;
   };
 
   useEffect(() => {
-    fetchData();
-  }, [symbol, k, days, useMaFilter]);
+    if (!symbol) return;
+    const wsUrl = buildWsUrl(`/ws/ticker?symbols=${encodeURIComponent(symbol)}`);
+    const ws = new WebSocket(wsUrl);
 
-  const stats = useMemo(() => {
-    if (results.length === 0) return { ror: '0', mdd: '0', winRate: '0' };
-    const finalHpr = results[results.length - 1].hpr;
-    const ror = ((finalHpr - 1) * 100).toFixed(2);
-    let maxHpr = 0;
-    let maxDrawdown = 0;
-    results.forEach(r => {
-      if (r.hpr > maxHpr) maxHpr = r.hpr;
-      const dd = (maxHpr - r.hpr) / maxHpr;
-      if (dd > maxDrawdown) maxDrawdown = dd;
-    });
-    const tradeDays = results.filter(r => r.isBought);
-    const wins = tradeDays.filter(r => r.ror > 0).length;
-    const winRate = tradeDays.length > 0 ? (wins / tradeDays.length * 100).toFixed(1) : '0';
-    return { ror, mdd: (maxDrawdown * 100).toFixed(2), winRate };
-  }, [results]);
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.symbol !== symbol) return;
+        setTicker((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            currentPrice: payload.currentPrice ?? prev.currentPrice,
+            changeRate: payload.changeRate ?? prev.changeRate,
+          };
+        });
+      } catch (err) {
+        console.error('Ticker stream parse failed', err);
+      }
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [symbol]);
 
   const handleAiAnalysis = async () => {
-    if (results.length === 0) return;
+    if (!metrics || !tradeSummary) return;
     setIsAnalyzing(true);
-    const report = await analyzeStrategyPerformance(results, k);
-    setAiReport(report || "분석 실패");
-    setIsAnalyzing(false);
+    try {
+      const response = await analyzeStrategyPerformance({
+        symbol,
+        k,
+        fee: DEFAULT_FEE,
+        days,
+        useMaFilter,
+        metrics,
+        tradeSummary,
+      });
+      if (response?.report) {
+        setAiReport(response.report);
+        setAiCached(response.cached);
+      } else {
+        setAiReport({
+          summary: '분석할 데이터가 충분하지 않습니다.',
+          risks: [],
+          parameterSuggestions: [],
+          whatToWatch: [],
+        });
+        setAiCached(false);
+      }
+    } catch (error) {
+      console.error('AI analysis failed', error);
+      setAiReport({
+        summary: 'AI 분석을 불러오는 중 오류가 발생했습니다.',
+        risks: [],
+        parameterSuggestions: [],
+        whatToWatch: [],
+      });
+      setAiCached(false);
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
@@ -114,7 +169,7 @@ const Dashboard: React.FC = () => {
         </div>
         <div className="xl:w-48 flex items-end">
           <button 
-            onClick={fetchData}
+            onClick={() => refetch()}
             className="w-full h-11 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-black shadow-lg shadow-slate-200 transition-all flex items-center justify-center gap-2 active:scale-95"
           >
             <i className="fa-solid fa-play"></i> Run Analytics
@@ -123,10 +178,10 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Primary KPI Grid */}
-      {error ? (
+      {errorMessage ? (
         <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl p-4 text-xs font-bold flex items-center gap-2">
           <i className="fa-solid fa-triangle-exclamation"></i>
-          {error}
+          {errorMessage}
         </div>
       ) : null}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
@@ -163,9 +218,9 @@ const Dashboard: React.FC = () => {
             <div className="w-8 h-8 rounded-lg bg-slate-50 text-slate-600 flex items-center justify-center"><i className="fa-solid fa-percent"></i></div>
           </div>
           <div className="mt-4">
-            <p className="text-2xl font-black mono text-slate-900 leading-none">{stats.winRate}%</p>
+            <p className="text-2xl font-black mono text-slate-900 leading-none">{winRateValue.toFixed(1)}%</p>
             <div className="mt-2 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-               <div className="h-full bg-indigo-500" style={{ width: `${stats.winRate}%` }}></div>
+               <div className="h-full bg-indigo-500" style={{ width: `${winRateValue}%` }}></div>
             </div>
           </div>
         </div>
@@ -176,9 +231,12 @@ const Dashboard: React.FC = () => {
             <div className="w-8 h-8 rounded-lg bg-white/20 text-white flex items-center justify-center"><i className="fa-solid fa-chart-line"></i></div>
           </div>
           <div className="mt-4">
-            <p className="text-3xl font-black mono leading-none">+{stats.ror}%</p>
+            <p className="text-3xl font-black mono leading-none">
+              {totalReturnValue >= 0 ? '+' : ''}
+              {totalReturnValue.toFixed(2)}%
+            </p>
             <p className="mt-2 text-[10px] font-bold text-indigo-100">
-              Across {results.length} Sessions {lastUpdated ? `• ${lastUpdated}` : ''}
+              Across {metrics ? metrics.totalDays : 0} Sessions {lastUpdated ? `• ${lastUpdated}` : ''}
             </p>
           </div>
         </div>
@@ -189,9 +247,9 @@ const Dashboard: React.FC = () => {
             <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center"><i className="fa-solid fa-shield-halved"></i></div>
           </div>
           <div className="mt-4">
-            <p className="text-2xl font-black mono text-rose-500 leading-none">-{stats.mdd}%</p>
-            <p className={`mt-2 text-[10px] font-bold ${Number(stats.mdd) < 10 ? 'text-emerald-500' : 'text-slate-400'} uppercase`}>
-              Risk Status: {Number(stats.mdd) < 10 ? 'Elite' : 'Moderate'}
+            <p className="text-2xl font-black mono text-rose-500 leading-none">-{mddValue.toFixed(2)}%</p>
+            <p className={`mt-2 text-[10px] font-bold ${mddValue < 10 ? 'text-emerald-500' : 'text-slate-400'} uppercase`}>
+              Risk Status: {mddValue < 10 ? 'Elite' : 'Moderate'}
             </p>
           </div>
         </div>
@@ -215,7 +273,7 @@ const Dashboard: React.FC = () => {
             </div>
             
             <div className="flex-1 w-full">
-              {loading ? (
+              {isFetching ? (
                 <div className="h-full flex flex-col items-center justify-center space-y-4">
                   <div className="w-12 h-12 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>
                   <p className="text-xs font-black text-slate-400 animate-pulse">Analyzing Candle Patterns...</p>
@@ -275,8 +333,8 @@ const Dashboard: React.FC = () => {
                 <p className="text-xs font-black text-slate-900">Backtest API</p>
                 <p className="text-[10px] text-slate-400 font-bold">/api/backtest</p>
               </div>
-              <span className={`px-2 py-1 rounded-full text-[10px] font-black ${error ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                {error ? 'DEGRADED' : 'OK'}
+              <span className={`px-2 py-1 rounded-full text-[10px] font-black ${errorMessage ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                {errorMessage ? 'DEGRADED' : 'OK'}
               </span>
             </div>
             <div className="mt-4 text-[10px] text-slate-400 font-bold flex items-center justify-between">
@@ -303,8 +361,44 @@ const Dashboard: React.FC = () => {
 
             <div className="flex-1 overflow-y-auto z-10 space-y-6 scrollbar-hide text-slate-400 text-xs leading-relaxed pr-2">
               {aiReport ? (
-                <div className="prose prose-invert prose-sm max-w-none space-y-4">
-                  {aiReport.split('\n').map((line, i) => <p key={i}>{line}</p>)}
+                <div className="space-y-5">
+                  <div>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Summary</p>
+                    <p className="mt-2 text-slate-200">{aiReport.summary}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Risks</p>
+                    <ul className="mt-2 space-y-1 text-slate-300">
+                      {aiReport.risks.length > 0 ? (
+                        aiReport.risks.map((item, i) => <li key={i}>• {item}</li>)
+                      ) : (
+                        <li className="text-slate-500">없음</li>
+                      )}
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Parameter Suggestions</p>
+                    <ul className="mt-2 space-y-1 text-slate-300">
+                      {aiReport.parameterSuggestions.length > 0 ? (
+                        aiReport.parameterSuggestions.map((item, i) => <li key={i}>• {item}</li>)
+                      ) : (
+                        <li className="text-slate-500">없음</li>
+                      )}
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">What To Watch</p>
+                    <ul className="mt-2 space-y-1 text-slate-300">
+                      {aiReport.whatToWatch.length > 0 ? (
+                        aiReport.whatToWatch.map((item, i) => <li key={i}>• {item}</li>)
+                      ) : (
+                        <li className="text-slate-500">없음</li>
+                      )}
+                    </ul>
+                  </div>
+                  {aiCached ? (
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Cached Result</p>
+                  ) : null}
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-center space-y-4 py-12">
@@ -317,7 +411,7 @@ const Dashboard: React.FC = () => {
             </div>
 
             <button 
-              disabled={isAnalyzing || loading}
+              disabled={isAnalyzing || isFetching || !metrics || !tradeSummary}
               onClick={handleAiAnalysis}
               className="mt-6 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black text-xs transition-all flex items-center justify-center gap-3 shadow-lg shadow-indigo-950/50 disabled:opacity-50 z-10"
             >

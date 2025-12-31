@@ -2,9 +2,12 @@
 import { OHLCV, BacktestResult, StrategyParams } from '../types';
 
 export function runBacktest(data: OHLCV[], params: StrategyParams): BacktestResult[] {
-  const { k, fee, useMaFilter } = params;
+  const { k, fee, useMaFilter, slippage = 0 } = params;
   let cumulativeReturn = 1;
   const results: BacktestResult[] = [];
+  const effectiveFee = Math.min(1, fee + slippage);
+  const feeMultiplier = Math.max(0, 1 - effectiveFee);
+  const feeFactor = feeMultiplier * feeMultiplier;
 
   // Need at least 5 days for MA5
   for (let i = 5; i < data.length; i++) {
@@ -24,7 +27,7 @@ export function runBacktest(data: OHLCV[], params: StrategyParams): BacktestResu
       isBought = isBought && (curr.open > ma5);
     }
 
-    const ror = isBought ? (curr.close / target) - (fee * 2) : 1;
+    const ror = isBought ? (curr.close / target) * feeFactor : 1;
     cumulativeReturn *= ror;
 
     results.push({

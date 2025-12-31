@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { fetchBacktest } from '../services/backendService';
+import { BacktestMetrics, StrategyParams } from '../types';
 
 const backtestCode = `import pyupbit
 import numpy as np
@@ -15,11 +17,12 @@ df['target'] = df['open'] + df['range'].shift(1)
 df['ma5'] = df['close'].rolling(window=5).mean().shift(1)
 
 # 4. 수익률 계산 (매수 조건: 목표가 돌파 AND 5일 이평선 위)
-# 수수료 0.1% (0.001) 적용 (매수+매도 슬리피지 고려)
+# 수수료 0.1% (0.001) 적용 (매수+매도 승수 적용)
 condition = (df['high'] > df['target']) & (df['open'] > df['ma5'])
 
+fee = 0.001
 df['ror'] = np.where(condition,
-                     df['close'] / df['target'] - 0.001,
+                     (df['close'] / df['target']) * (1 - fee) * (1 - fee),
                      1)
 
 # 5. 누적 수익률 계산 (복리)
@@ -90,7 +93,42 @@ while True:
         print(f"에러 발생: {e}")
         time.sleep(1)`;
 
+const GUIDE_PARAMS: StrategyParams = {
+  symbol: 'KRW-BTC',
+  k: 0.5,
+  fee: 0.001,
+  days: 365,
+  useMaFilter: true,
+};
+
+const INITIAL_CAPITAL = 1000000;
+
 const BacktestGuide: React.FC = () => {
+  const [guideMetrics, setGuideMetrics] = useState<BacktestMetrics | null>(null);
+  const [guideError, setGuideError] = useState<string | null>(null);
+  const [guideLoading, setGuideLoading] = useState(false);
+  const [guideUpdatedAt, setGuideUpdatedAt] = useState<string | null>(null);
+
+  const guideFinalAmount = guideMetrics
+    ? Math.round(INITIAL_CAPITAL * (1 + guideMetrics.totalReturn / 100))
+    : null;
+
+  const handleGuideBacktest = async () => {
+    setGuideLoading(true);
+    setGuideError(null);
+    try {
+      const data = await fetchBacktest(GUIDE_PARAMS);
+      setGuideMetrics(data.metrics);
+      setGuideUpdatedAt(new Date().toLocaleTimeString());
+    } catch (error) {
+      console.error('Guide backtest failed', error);
+      setGuideMetrics(null);
+      setGuideError('백테스트 실행에 실패했습니다. 백엔드 상태를 확인하세요.');
+    } finally {
+      setGuideLoading(false);
+    }
+  };
+
   return (
     <div className="p-6 space-y-8 fade-in">
       <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-800 text-white p-8 rounded-3xl border border-slate-800 relative overflow-hidden">
@@ -176,11 +214,56 @@ const BacktestGuide: React.FC = () => {
         </div>
         <p className="text-sm text-slate-600">
           "작년 1년 동안 이 방식으로 100만 원을 굴렸다면 얼마가 되었을까?"를 확인하는 코드입니다.
-          Google Colab 또는 파이썬 환경에서 바로 실행해 보세요.
+          아래 버튼으로 이 페이지에서 바로 실행하거나, Google Colab/파이썬 환경에서 실행해 보세요.
         </p>
         <pre className="bg-slate-950 text-slate-100 rounded-2xl p-5 text-[11px] leading-relaxed overflow-x-auto">
           <code className="mono whitespace-pre">{backtestCode}</code>
         </pre>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <button
+            onClick={handleGuideBacktest}
+            disabled={guideLoading}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black bg-slate-900 text-white hover:bg-black transition-colors disabled:opacity-60"
+          >
+            <i className={`fa-solid ${guideLoading ? 'fa-spinner fa-spin' : 'fa-play'}`}></i>
+            {guideLoading ? '백테스트 실행 중...' : '이 페이지에서 바로 실행'}
+          </button>
+          <p className="text-[10px] text-slate-400 font-bold">
+            백엔드(Python/FastAPI)가 실행 중이어야 합니다. (KRW-BTC, K=0.5, 수수료 0.1%, 365일)
+          </p>
+        </div>
+        {guideError ? (
+          <div className="bg-rose-50 border border-rose-200 text-rose-600 rounded-xl px-4 py-3 text-xs font-bold">
+            <i className="fa-solid fa-triangle-exclamation mr-2"></i>
+            {guideError}
+          </div>
+        ) : null}
+        {guideMetrics ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">최종 금액</p>
+              <p className="mt-2 text-sm font-black text-slate-900 mono">
+                {(guideFinalAmount || 0).toLocaleString()}원
+              </p>
+            </div>
+            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">수익률</p>
+              <p className="mt-2 text-sm font-black text-emerald-600 mono">
+                {guideMetrics.totalReturn >= 0 ? '+' : ''}
+                {guideMetrics.totalReturn.toFixed(2)}%
+              </p>
+            </div>
+            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">최대 낙폭(MDD)</p>
+              <p className="mt-2 text-sm font-black text-rose-500 mono">
+                -{guideMetrics.mdd.toFixed(2)}%
+              </p>
+              <p className="mt-2 text-[10px] text-slate-400 font-bold">
+                실행 시각: {guideUpdatedAt || '--:--:--'}
+              </p>
+            </div>
+          </div>
+        ) : null}
         <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">해석 포인트</p>
           <div className="text-xs text-slate-600 space-y-2">
